@@ -1,0 +1,63 @@
+name: Deploy FluxStack Migrations
+
+on:
+  push:
+    branches: [main, staging, production]
+    paths:
+      - 'migrations/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/production" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          else
+            echo "environment=development" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get pending migrations
+        id: migrations
+        run: |
+          API_URL="${{ secrets.FLUXSTACK_API_URL || 'app.fluxstack.com' }}"
+          PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
+          ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
+          API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
+          
+          RESPONSE=$(curl -s -X GET \
+            "https://\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/pending-migrations" \
+            -H "Authorization: Bearer \${API_KEY}" \
+            -H "Content-Type: application/json")
+          
+          MIGRATION_ID=$(echo "$RESPONSE" | jq -r '.data.migrations[0].id // empty')
+          
+          if [ -z "$MIGRATION_ID" ] || [ "$MIGRATION_ID" == "null" ]; then
+            echo "No pending migrations"
+            echo "migration_id=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "migration_id=\${MIGRATION_ID}" >> $GITHUB_OUTPUT
+
+      - name: Deploy migration
+        if: steps.migrations.outputs.migration_id != ''
+        run: |
+          API_URL="${{ secrets.FLUXSTACK_API_URL || 'app.fluxstack.com' }}"
+          PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
+          ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
+          API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
+          MIGRATION_ID="${{ steps.migrations.outputs.migration_id }}"
+          
+          curl -X POST \
+            "https://\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/deploy" \
+            -H "Authorization: Bearer \${API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"migrationId\": \"\${MIGRATION_ID}\"}"
