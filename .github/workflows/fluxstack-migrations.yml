@@ -27,58 +27,58 @@ jobs:
           API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
           
           # Remove https:// prefix if present (using sed for more reliable string manipulation)
-          API_URL_BASE=$(echo "\$API_URL_BASE" | sed 's|^https://||')
+          API_URL_BASE=$(echo "$API_URL_BASE" | sed 's|^https://||')
           
           # Ensure we have a valid domain
-          if [ -z "\$API_URL_BASE" ]; then
+          if [ -z "$API_URL_BASE" ]; then
             echo "❌ API URL is empty"
             exit 1
           fi
           
-          API_URL="https://${API_URL_BASE}"
+          API_URL="https://$API_URL_BASE"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
           
           # Validate required variables
-          if [ -z "\$PROJECT_ID" ] || [ -z "\$ENV_ID" ] || [ -z "\$API_KEY" ]; then
+          if [ -z "$PROJECT_ID" ] || [ -z "$ENV_ID" ] || [ -z "$API_KEY" ]; then
             echo "❌ Missing required secrets: PROJECT_ID, ENV_ID, or API_KEY"
             exit 1
           fi
           
-          echo "Fetching pending migrations from ${API_URL}..."
+          echo "Fetching pending migrations from $API_URL..."
           
           HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X GET \
-            "${API_URL}/api/projects/${PROJECT_ID}/environments/${ENV_ID}/pending-migrations" \
-            -H "Authorization: Bearer ${API_KEY}" \
+            "$API_URL/api/projects/$PROJECT_ID/environments/$ENV_ID/pending-migrations" \
+            -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json")
           
           RESPONSE=$(cat /tmp/response.json)
           
-          echo "HTTP Status: \$HTTP_CODE"
+          echo "HTTP Status: $HTTP_CODE"
           
-          if [ "\$HTTP_CODE" -lt 200 ] || [ "\$HTTP_CODE" -ge 300 ]; then
-            echo "❌ Failed to get pending migrations (HTTP \$HTTP_CODE)"
-            echo "\$RESPONSE" | jq '.' 2>/dev/null || echo "\$RESPONSE"
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "❌ Failed to get pending migrations (HTTP $HTTP_CODE)"
+            echo "$RESPONSE" | jq '.' 2>/dev/null || echo "$RESPONSE"
             exit 1
           fi
           
-          if echo "\$RESPONSE" | jq -e '.error' > /dev/null 2>&1; then
+          if echo "$RESPONSE" | jq -e '.error' > /dev/null 2>&1; then
             echo "❌ API returned an error:"
-            echo "\$RESPONSE" | jq '.error'
+            echo "$RESPONSE" | jq '.error'
             exit 1
           fi
           
-          MIGRATION_ID=$(echo "\$RESPONSE" | jq -r '.data.migrations[0].id // empty' 2>/dev/null)
+          MIGRATION_ID=$(echo "$RESPONSE" | jq -r '.data.migrations[0].id // empty' 2>/dev/null)
           
-          if [ -z "\$MIGRATION_ID" ] || [ "\$MIGRATION_ID" == "null" ] || [ "\$MIGRATION_ID" == "" ]; then
+          if [ -z "$MIGRATION_ID" ] || [ "$MIGRATION_ID" == "null" ] || [ "$MIGRATION_ID" == "" ]; then
             echo "ℹ️ No pending migrations found"
             echo "migration_id=" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          echo "✅ Found pending migration: \$MIGRATION_ID"
-          echo "migration_id=${MIGRATION_ID}" >> $GITHUB_OUTPUT
+          echo "✅ Found pending migration: $MIGRATION_ID"
+          echo "migration_id=$MIGRATION_ID" >> $GITHUB_OUTPUT
 
       - name: Deploy migration
         if: steps.migrations.outputs.migration_id != ''
@@ -89,43 +89,43 @@ jobs:
           API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
           
           # Remove https:// prefix if present (using sed for more reliable string manipulation)
-          API_URL_BASE=$(echo "\$API_URL_BASE" | sed 's|^https://||')
+          API_URL_BASE=$(echo "$API_URL_BASE" | sed 's|^https://||')
           
           # Ensure we have a valid domain
-          if [ -z "\$API_URL_BASE" ]; then
+          if [ -z "$API_URL_BASE" ]; then
             echo "❌ API URL is empty"
             exit 1
           fi
           
-          API_URL="https://${API_URL_BASE}"
+          API_URL="https://$API_URL_BASE"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
           MIGRATION_ID="${{ steps.migrations.outputs.migration_id }}"
           
           # Validate required variables
-          if [ -z "\$PROJECT_ID" ] || [ -z "\$ENV_ID" ] || [ -z "\$API_KEY" ] || [ -z "\$MIGRATION_ID" ]; then
+          if [ -z "$PROJECT_ID" ] || [ -z "$ENV_ID" ] || [ -z "$API_KEY" ] || [ -z "$MIGRATION_ID" ]; then
             echo "❌ Missing required values: PROJECT_ID, ENV_ID, API_KEY, or MIGRATION_ID"
             exit 1
           fi
           
-          echo "🚀 Deploying migration \$MIGRATION_ID to environment \$ENV_ID..."
+          echo "🚀 Deploying migration $MIGRATION_ID to environment $ENV_ID..."
           
           HTTP_CODE=$(curl -s -o /tmp/deploy-response.json -w "%{http_code}" -X POST \
-            "${API_URL}/api/projects/${PROJECT_ID}/environments/${ENV_ID}/deploy" \
-            -H "Authorization: Bearer ${API_KEY}" \
+            "$API_URL/api/projects/$PROJECT_ID/environments/$ENV_ID/deploy" \
+            -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"migrationId\": \"${MIGRATION_ID}\"}")
+            -d "{\"migrationId\": \"$MIGRATION_ID\"}")
           
           BODY=$(cat /tmp/deploy-response.json)
           
-          echo "HTTP Status: \$HTTP_CODE"
+          echo "HTTP Status: $HTTP_CODE"
           
-          if [ "\$HTTP_CODE" -ge 200 ] && [ "\$HTTP_CODE" -lt 300 ]; then
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ Migration deployed successfully!"
-            echo "\$BODY" | jq '.' 2>/dev/null || echo "\$BODY"
+            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
           else
-            echo "❌ Migration deployment failed (HTTP \$HTTP_CODE)"
-            echo "\$BODY" | jq '.' 2>/dev/null || echo "\$BODY"
+            echo "❌ Migration deployment failed (HTTP $HTTP_CODE)"
+            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
             exit 1
           fi
