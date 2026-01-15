@@ -24,40 +24,87 @@ jobs:
             echo "environment=development" >> $GITHUB_OUTPUT
           fi
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       - name: Get pending migrations
         id: migrations
         run: |
-          API_URL="${{ secrets.FLUXSTACK_API_URL || 'app.fluxstack.com' }}"
+          # Set API URL (remove https:// if present, we'll add it)
+          API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
+          # Remove https:// prefix if present
+          API_URL_BASE=\${API_URL_BASE#https://}
+          API_URL="https://\${API_URL_BASE}"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
           
-          RESPONSE=$(curl -s -X GET \
-            "https://\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/pending-migrations" \
+          echo "Fetching pending migrations from \${API_URL}..."
+          
+          HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X GET \
+            "\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/pending-migrations" \
             -H "Authorization: Bearer \${API_KEY}" \
             -H "Content-Type: application/json")
           
-          MIGRATION_ID=$(echo "$RESPONSE" | jq -r '.data.migrations[0].id // empty')
+          RESPONSE=$(cat /tmp/response.json)
           
-          if [ -z "$MIGRATION_ID" ] || [ "$MIGRATION_ID" == "null" ]; then
-            echo "No pending migrations"
+          echo "HTTP Status: \$HTTP_CODE"
+          
+          if [ "\$HTTP_CODE" -lt 200 ] || [ "\$HTTP_CODE" -ge 300 ]; then
+            echo "❌ Failed to get pending migrations (HTTP \$HTTP_CODE)"
+            echo "\$RESPONSE" | jq '.' 2>/dev/null || echo "\$RESPONSE"
+            exit 1
+          fi
+          
+          if echo "\$RESPONSE" | jq -e '.error' > /dev/null 2>&1; then
+            echo "❌ API returned an error:"
+            echo "\$RESPONSE" | jq '.error'
+            exit 1
+          fi
+          
+          MIGRATION_ID=$(echo "\$RESPONSE" | jq -r '.data.migrations[0].id // empty' 2>/dev/null)
+          
+          if [ -z "\$MIGRATION_ID" ] || [ "\$MIGRATION_ID" == "null" ] || [ "\$MIGRATION_ID" == "" ]; then
+            echo "ℹ️ No pending migrations found"
             echo "migration_id=" >> $GITHUB_OUTPUT
             exit 0
           fi
           
+          echo "✅ Found pending migration: \$MIGRATION_ID"
           echo "migration_id=\${MIGRATION_ID}" >> $GITHUB_OUTPUT
 
       - name: Deploy migration
         if: steps.migrations.outputs.migration_id != ''
         run: |
-          API_URL="${{ secrets.FLUXSTACK_API_URL || 'app.fluxstack.com' }}"
+          # Set API URL (remove https:// if present, we'll add it)
+          API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
+          # Remove https:// prefix if present
+          API_URL_BASE=\${API_URL_BASE#https://}
+          API_URL="https://\${API_URL_BASE}"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
           MIGRATION_ID="${{ steps.migrations.outputs.migration_id }}"
           
-          curl -X POST \
-            "https://\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/deploy" \
+          echo "🚀 Deploying migration \$MIGRATION_ID to environment \$ENV_ID..."
+          
+          HTTP_CODE=$(curl -s -o /tmp/deploy-response.json -w "%{http_code}" -X POST \
+            "\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/deploy" \
             -H "Authorization: Bearer \${API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"migrationId\": \"\${MIGRATION_ID}\"}"
+            -d "{\"migrationId\": \"\${MIGRATION_ID}\"}")
+          
+          BODY=$(cat /tmp/deploy-response.json)
+          
+          echo "HTTP Status: \$HTTP_CODE"
+          
+          if [ "\$HTTP_CODE" -ge 200 ] && [ "\$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Migration deployed successfully!"
+            echo "\$BODY" | jq '.' 2>/dev/null || echo "\$BODY"
+          else
+            echo "❌ Migration deployment failed (HTTP \$HTTP_CODE)"
+            echo "\$BODY" | jq '.' 2>/dev/null || echo "\$BODY"
+            exit 1
+          fi
