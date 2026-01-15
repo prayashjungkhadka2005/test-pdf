@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
           
-          API_URL="https://\${API_URL_BASE}"
+          API_URL="https://${API_URL_BASE}"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
@@ -46,11 +46,11 @@ jobs:
             exit 1
           fi
           
-          echo "Fetching pending migrations from \${API_URL}..."
+          echo "Fetching pending migrations from ${API_URL}..."
           
           HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X GET \
-            "\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/pending-migrations" \
-            -H "Authorization: Bearer \${API_KEY}" \
+            "${API_URL}/api/projects/${PROJECT_ID}/environments/${ENV_ID}/pending-migrations" \
+            -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json")
           
           RESPONSE=$(cat /tmp/response.json)
@@ -78,7 +78,7 @@ jobs:
           fi
           
           echo "✅ Found pending migration: \$MIGRATION_ID"
-          echo "migration_id=\${MIGRATION_ID}" >> $GITHUB_OUTPUT
+          echo "migration_id=${MIGRATION_ID}" >> $GITHUB_OUTPUT
 
       - name: Deploy migration
         if: steps.migrations.outputs.migration_id != ''
@@ -97,7 +97,7 @@ jobs:
             exit 1
           fi
           
-          API_URL="https://\${API_URL_BASE}"
+          API_URL="https://${API_URL_BASE}"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
@@ -112,10 +112,10 @@ jobs:
           echo "🚀 Deploying migration \$MIGRATION_ID to environment \$ENV_ID..."
           
           HTTP_CODE=$(curl -s -o /tmp/deploy-response.json -w "%{http_code}" -X POST \
-            "\${API_URL}/api/projects/\${PROJECT_ID}/environments/\${ENV_ID}/deploy" \
-            -H "Authorization: Bearer \${API_KEY}" \
+            "${API_URL}/api/projects/${PROJECT_ID}/environments/${ENV_ID}/deploy" \
+            -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "{\"migrationId\": \"\${MIGRATION_ID}\"}")
+            -d "{\"migrationId\": \"${MIGRATION_ID}\"}")
           
           BODY=$(cat /tmp/deploy-response.json)
           
