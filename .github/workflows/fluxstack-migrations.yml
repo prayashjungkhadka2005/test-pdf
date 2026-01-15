@@ -46,7 +46,26 @@ jobs:
             exit 1
           fi
           
-          echo "Fetching pending migrations from $API_URL..."
+          # Trim whitespace from API key (handles copy-paste issues)
+          API_KEY=$(echo "$API_KEY" | xargs)
+          
+          # Validate API key format (should start with fsk_live_ and be 73 chars)
+          if [ "${#API_KEY}" -ne 73 ]; then
+            echo "❌ Invalid API key length: expected 73 characters, got ${#API_KEY}"
+            echo "   Key prefix: ${API_KEY:0:12}..."
+            exit 1
+          fi
+          
+          if [[ ! "$API_KEY" =~ ^fsk_live_ ]]; then
+            echo "❌ Invalid API key format: must start with 'fsk_live_'"
+            echo "   Key prefix: ${API_KEY:0:12}..."
+            exit 1
+          fi
+          
+          echo "🔑 API key format validated (length: ${#API_KEY})"
+          echo "📋 Project ID: $PROJECT_ID"
+          echo "🌍 Environment ID: $ENV_ID"
+          echo "🌐 Fetching pending migrations from $API_URL..."
           
           HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X GET \
             "$API_URL/api/projects/$PROJECT_ID/environments/$ENV_ID/pending-migrations" \
@@ -56,6 +75,7 @@ jobs:
           RESPONSE=$(cat /tmp/response.json)
           
           echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $RESPONSE"
           
           if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
             echo "❌ Failed to get pending migrations (HTTP $HTTP_CODE)"
@@ -109,7 +129,11 @@ jobs:
             exit 1
           fi
           
+          # Trim whitespace from API key (handles copy-paste issues)
+          API_KEY=$(echo "$API_KEY" | xargs)
+          
           echo "🚀 Deploying migration $MIGRATION_ID to environment $ENV_ID..."
+          echo "API URL: $API_URL"
           
           HTTP_CODE=$(curl -s -o /tmp/deploy-response.json -w "%{http_code}" -X POST \
             "$API_URL/api/projects/$PROJECT_ID/environments/$ENV_ID/deploy" \
@@ -120,6 +144,7 @@ jobs:
           BODY=$(cat /tmp/deploy-response.json)
           
           echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
           
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ Migration deployed successfully!"
