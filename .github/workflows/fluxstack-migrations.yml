@@ -13,17 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Determine environment
-        id: env
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/production" ]]; then
-            echo "environment=production" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
-            echo "environment=staging" >> $GITHUB_OUTPUT
-          else
-            echo "environment=development" >> $GITHUB_OUTPUT
-          fi
-
       - name: Install jq
         run: |
           sudo apt-get update
@@ -32,14 +21,30 @@ jobs:
       - name: Get pending migrations
         id: migrations
         run: |
+          set -e  # Exit on error
+          
           # Set API URL (remove https:// if present, we'll add it)
           API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
-          # Remove https:// prefix if present
-          API_URL_BASE=\${API_URL_BASE#https://}
+          
+          # Remove https:// prefix if present (using sed for more reliable string manipulation)
+          API_URL_BASE=$(echo "\$API_URL_BASE" | sed 's|^https://||')
+          
+          # Ensure we have a valid domain
+          if [ -z "\$API_URL_BASE" ]; then
+            echo "❌ API URL is empty"
+            exit 1
+          fi
+          
           API_URL="https://\${API_URL_BASE}"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
+          
+          # Validate required variables
+          if [ -z "\$PROJECT_ID" ] || [ -z "\$ENV_ID" ] || [ -z "\$API_KEY" ]; then
+            echo "❌ Missing required secrets: PROJECT_ID, ENV_ID, or API_KEY"
+            exit 1
+          fi
           
           echo "Fetching pending migrations from \${API_URL}..."
           
@@ -78,15 +83,31 @@ jobs:
       - name: Deploy migration
         if: steps.migrations.outputs.migration_id != ''
         run: |
+          set -e  # Exit on error
+          
           # Set API URL (remove https:// if present, we'll add it)
           API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
-          # Remove https:// prefix if present
-          API_URL_BASE=\${API_URL_BASE#https://}
+          
+          # Remove https:// prefix if present (using sed for more reliable string manipulation)
+          API_URL_BASE=$(echo "\$API_URL_BASE" | sed 's|^https://||')
+          
+          # Ensure we have a valid domain
+          if [ -z "\$API_URL_BASE" ]; then
+            echo "❌ API URL is empty"
+            exit 1
+          fi
+          
           API_URL="https://\${API_URL_BASE}"
           PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
           ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
           API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
           MIGRATION_ID="${{ steps.migrations.outputs.migration_id }}"
+          
+          # Validate required variables
+          if [ -z "\$PROJECT_ID" ] || [ -z "\$ENV_ID" ] || [ -z "\$API_KEY" ] || [ -z "\$MIGRATION_ID" ]; then
+            echo "❌ Missing required values: PROJECT_ID, ENV_ID, API_KEY, or MIGRATION_ID"
+            exit 1
+          fi
           
           echo "🚀 Deploying migration \$MIGRATION_ID to environment \$ENV_ID..."
           
