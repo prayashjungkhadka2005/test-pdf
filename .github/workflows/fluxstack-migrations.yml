@@ -1,156 +1,43 @@
-name: Deploy FluxStack Migrations
+name: Sync FluxStack Status
 
 on:
   push:
-    branches: [main, staging, production]
-    paths:
-      - 'migrations/**'
+    branches: ['main']
+    paths: ['migrations/**']
 
 jobs:
-  deploy:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+      # --- 1. YOUR DEPLOYMENT STEP ---
+      # Add your own psql / prisma / migration command here
+      # - name: Run SQL Migrations
+      #   run: psql ${{ secrets.DATABASE_URL }} -f migrations/latest.sql
 
-      - name: Get pending migrations
-        id: migrations
+      # --- 2. NOTIFY FLUXSTACK ---
+      - name: Update FluxStack Dashboard
+        if: success()
         run: |
-          set -e  # Exit on error
+          # 1. Get newest migration file
+          LATEST_FILE=$(ls -t migrations/*.sql | head -n 1)
+          FILENAME=$(basename "$LATEST_FILE" .sql)
           
-          # Set API URL (remove https:// if present, we'll add it)
-          API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
+          # 2. Extract tag (removes timestamp prefix like 20260117183000_)
+          MIGRATION_TAG=$(echo "$FILENAME" | sed -E 's/^[0-9]{14}_//')
           
-          # Remove https:// prefix if present (using sed for more reliable string manipulation)
-          API_URL_BASE=$(echo "$API_URL_BASE" | sed 's|^https://||')
-          
-          # Ensure we have a valid domain
-          if [ -z "$API_URL_BASE" ]; then
-            echo "❌ API URL is empty"
-            exit 1
-          fi
-          
-          API_URL="https://$API_URL_BASE"
-          PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
-          ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
-          API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
-          
-          # Validate required variables
-          if [ -z "$PROJECT_ID" ] || [ -z "$ENV_ID" ] || [ -z "$API_KEY" ]; then
-            echo "❌ Missing required secrets: PROJECT_ID, ENV_ID, or API_KEY"
-            exit 1
-          fi
-          
-          # Trim whitespace from API key (handles copy-paste issues)
-          API_KEY=$(echo "$API_KEY" | xargs)
-          
-          # Validate API key format (should start with fsk_live_ and be 73 chars)
-          if [ "${#API_KEY}" -ne 73 ]; then
-            echo "❌ Invalid API key length: expected 73 characters, got ${#API_KEY}"
-            echo "   Key prefix: ${API_KEY:0:12}..."
-            exit 1
-          fi
-          
-          if [[ ! "$API_KEY" =~ ^fsk_live_ ]]; then
-            echo "❌ Invalid API key format: must start with 'fsk_live_'"
-            echo "   Key prefix: ${API_KEY:0:12}..."
-            exit 1
-          fi
-          
-          echo "🔑 API key format validated (length: ${#API_KEY})"
-          echo "📋 Project ID: $PROJECT_ID"
-          echo "🌍 Environment ID: $ENV_ID"
-          echo "🌐 Fetching pending migrations from $API_URL..."
-          
-          HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" -X GET \
-            "$API_URL/api/projects/$PROJECT_ID/environments/$ENV_ID/pending-migrations" \
-            -H "Authorization: Bearer $API_KEY" \
-            -H "Content-Type: application/json")
-          
-          RESPONSE=$(cat /tmp/response.json)
-          
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Response: $RESPONSE"
-          
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "❌ Failed to get pending migrations (HTTP $HTTP_CODE)"
-            echo "$RESPONSE" | jq '.' 2>/dev/null || echo "$RESPONSE"
-            exit 1
-          fi
-          
-          if echo "$RESPONSE" | jq -e '.error' > /dev/null 2>&1; then
-            echo "❌ API returned an error:"
-            echo "$RESPONSE" | jq '.error'
-            exit 1
-          fi
-          
-          MIGRATION_ID=$(echo "$RESPONSE" | jq -r '.data.migrations[0].id // empty' 2>/dev/null)
-          
-          if [ -z "$MIGRATION_ID" ] || [ "$MIGRATION_ID" == "null" ] || [ "$MIGRATION_ID" == "" ]; then
-            echo "ℹ️ No pending migrations found"
-            echo "migration_id=" >> $GITHUB_OUTPUT
+          echo "✅ Successful migration: $MIGRATION_TAG"
+
+          if [ "${{ github.ref_name }}" == "main" ]; then
+            ENV_ID="${{ secrets.FLUXSTACK_ENV_STAGING_ID }}"
+          else
+            echo "Branch not mapped. Skipping sync."
             exit 0
           fi
-          
-          echo "✅ Found pending migration: $MIGRATION_ID"
-          echo "migration_id=$MIGRATION_ID" >> $GITHUB_OUTPUT
 
-      - name: Deploy migration
-        if: steps.migrations.outputs.migration_id != ''
-        run: |
-          set -e  # Exit on error
-          
-          # Set API URL (remove https:// if present, we'll add it)
-          API_URL_BASE="${{ secrets.FLUXSTACK_API_URL || 'fluxstack.io' }}"
-          
-          # Remove https:// prefix if present (using sed for more reliable string manipulation)
-          API_URL_BASE=$(echo "$API_URL_BASE" | sed 's|^https://||')
-          
-          # Ensure we have a valid domain
-          if [ -z "$API_URL_BASE" ]; then
-            echo "❌ API URL is empty"
-            exit 1
-          fi
-          
-          API_URL="https://$API_URL_BASE"
-          PROJECT_ID="cmj38dk9j0001jw04kqbsee8e"
-          ENV_ID="cmkfr52zb0007xwaxf8jeffpo"
-          API_KEY="${{ secrets.FLUXSTACK_API_KEY }}"
-          MIGRATION_ID="${{ steps.migrations.outputs.migration_id }}"
-          
-          # Validate required variables
-          if [ -z "$PROJECT_ID" ] || [ -z "$ENV_ID" ] || [ -z "$API_KEY" ] || [ -z "$MIGRATION_ID" ]; then
-            echo "❌ Missing required values: PROJECT_ID, ENV_ID, API_KEY, or MIGRATION_ID"
-            exit 1
-          fi
-          
-          # Trim whitespace from API key (handles copy-paste issues)
-          API_KEY=$(echo "$API_KEY" | xargs)
-          
-          echo "🚀 Deploying migration $MIGRATION_ID to environment $ENV_ID..."
-          echo "API URL: $API_URL"
-          
-          HTTP_CODE=$(curl -s -o /tmp/deploy-response.json -w "%{http_code}" -X POST \
-            "$API_URL/api/projects/$PROJECT_ID/environments/$ENV_ID/deploy" \
-            -H "Authorization: Bearer $API_KEY" \
+          # 3. Inform FluxStack to clear the "Pending" status
+          curl -s -X POST "https://fluxstack.io/api/external/sync-deployment" \
+            -H "Authorization: Bearer ${{ secrets.FLUXSTACK_API_KEY }}" \
             -H "Content-Type: application/json" \
-            -d "{\"migrationId\": \"$MIGRATION_ID\"}")
-          
-          BODY=$(cat /tmp/deploy-response.json)
-          
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Response: $BODY"
-          
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Migration deployed successfully!"
-            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
-          else
-            echo "❌ Migration deployment failed (HTTP $HTTP_CODE)"
-            echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
-            exit 1
-          fi
+            -d "{\"projectId\": \"cmj38dk9j0001jw04kqbsee8e\", \"environmentId\": \"\$ENV_ID\", \"tag\": \"\$MIGRATION_TAG\"}"
