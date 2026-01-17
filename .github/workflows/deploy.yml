@@ -6,34 +6,46 @@ on:
     paths: ['migrations/**']
 
 jobs:
-  deploy:
+  fluxstack-sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Update FluxStack
+      - name: Notify FluxStack
         if: success()
         env:
           PROJECT_ID: "cmj38dk9j0001jw04kqbsee8e"
           API_KEY: "${{ secrets.FLUXSTACK_API_KEY }}"
         run: |
-          # 1. Get the latest migration file
+          # 1. Identify the latest migration
           LATEST_FILE=$(ls -t migrations/*.sql | head -n 1)
           FILENAME=$(basename "$LATEST_FILE" .sql)
           
-          # 2. Extract tag (handles YYYYMMDDTHHMMSS_tag.sql)
+          # 2. Extract the tag (removes timestamp like 20260117T183000_)
           MIGRATION_TAG=$(echo "$FILENAME" | sed -E 's/^[0-9]+T[0-9]+_//')
-          echo "🚀 Deploying migration: $MIGRATION_TAG"
+          
+          echo "🚀 Deploying and Syncing migration: $MIGRATION_TAG"
 
           if [ "${{ github.ref_name }}" == "main" ]; then
             ENV_ID="${{ secrets.FLUXSTACK_ENV_STAGING_ID }}"
           else
-            echo "Branch not mapped. Skipping sync."
+            echo "⚠️ Branch not mapped to any FluxStack environment. Skipping sync."
             exit 0
           fi
 
-          # 3. Tell FluxStack to EXECUTE and SYNC
+          # 3. Create payload for robustness (prevents escaping bugs)
+          cat <<EOF > payload.json
+          {
+            "projectId": "$PROJECT_ID",
+            "environmentId": "$ENV_ID",
+            "tag": "$MIGRATION_TAG",
+            "executeSql": true
+          }
+          EOF
+
+          # 4. Trigger FluxStack Deployment & Sync
           curl -s -X POST "https://fluxstack.io/api/external/sync-deployment" \
             -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"projectId\": \"$PROJECT_ID\", \"environmentId\": \"\$ENV_ID\", \"tag\": \"\$MIGRATION_TAG\", \"executeSql\": true}"
+            -d @payload.json
