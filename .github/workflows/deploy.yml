@@ -28,7 +28,7 @@ jobs:
           echo "🚀 Deploying and Syncing migration: $MIGRATION_TAG"
 
           if [ "${{ github.ref_name }}" == "main" ]; then
-            ENV_ID="${{ secrets.FLUXSTACK_ENV_STAGING_ID }}"
+            ENV_ID="${{ secrets.FLUXSTACK_ENV_DEVELOPMENT_ID }}"
           else
             echo "⚠️ Branch not mapped to any FluxStack environment. Skipping sync."
             exit 0
@@ -45,7 +45,9 @@ jobs:
           EOF
 
           # 4. Trigger FluxStack Deployment & Sync
-          curl -s -X POST "https://fluxstack.io/api/external/sync-deployment" \
+          curl -L -f -s -X POST "https://fluxstack.io/api/external/sync-deployment" \
             -H "Authorization: Bearer $API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload.json
+
+
